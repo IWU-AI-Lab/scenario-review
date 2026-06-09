@@ -137,8 +137,8 @@
 
 <div id="gate" class="gate">
   <h2>Clinical Scenario Review</h2>
-  <p>Thank you for helping verify these diabetes care scenarios. First, load the scenario
-     file you were sent, then enter your name to begin.</p>
+  <p>Thank you for helping verify these diabetes care scenarios. The scenarios should load
+     automatically — just enter your name to begin. If they don't load, use the picker below.</p>
   <div id="dataStatus"></div>
   <div id="dropZone" class="drop">
     <b>Drop the scenarios file here</b><br>or click to choose it<br>
@@ -218,12 +218,12 @@ function maybeEnableBegin(){
   const ready = SCENARIOS && document.getElementById("nameInput").value.trim();
   document.getElementById("beginBtn").disabled = !ready;
 }
-(function tryUrlParam(){
-  const p=new URLSearchParams(location.search).get("data"); if(!p) return;
+(function autoLoad(){
+  const p = new URLSearchParams(location.search).get("data") || "scenarios.json";
   fetch(p).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
-    .then(obj=>ingest(obj,"url"))
+    .then(obj=>ingest(obj,"repo"))
     .catch(e=>{document.getElementById("dataStatus").innerHTML=
-      `<div class="err">Could not load data from the link (${e.message}). Use the file picker below.</div>`;});
+      `<div class="err">Could not load scenarios automatically (${e.message}). Use the file picker below.</div>`;});
 })();
 const dz=document.getElementById("dropZone"), fi=document.getElementById("fileInput");
 dz.addEventListener("click",()=>fi.click());
