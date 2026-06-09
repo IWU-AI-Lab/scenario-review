@@ -63,6 +63,20 @@
   .loaded{color:var(--approve);font-weight:700;margin:8px 0;}
   .err{color:var(--reject);font-weight:700;margin:8px 0;}
 
+  /* loaded confirmation + next-step callout */
+  .loaded-box{background:var(--key-bg);border:1px solid var(--key-line);border-radius:10px;
+    padding:14px 16px;margin:4px 0 18px;}
+  .loaded-line{font-weight:700;color:var(--approve);font-size:15px;display:flex;align-items:center;gap:8px;}
+  .loaded-line .check{font-size:18px;}
+  .next-step{margin-top:8px;color:var(--ink);font-size:15px;}
+  /* when scenarios are loaded, draw the eye to the name field */
+  .gate.ready label{font-size:16px;}
+  .gate.ready #nameInput{border:2px solid var(--accent);}
+  /* small fallback link */
+  .link-btn{background:none;border:none;color:var(--muted);font-family:inherit;font-size:13px;
+    text-decoration:underline;cursor:pointer;padding:0;margin:2px 0 16px;}
+  .link-btn:hover{color:var(--accent);}
+
   .counter{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:14px;}
   .scn-id{font-size:14px;color:var(--accent);font-weight:600;}
 
@@ -137,17 +151,31 @@
 
 <div id="gate" class="gate">
   <h2>Clinical Scenario Review</h2>
-  <p>Thank you for helping verify these diabetes care scenarios. The scenarios should load
-     automatically — just enter your name to begin. If they don't load, use the picker below.</p>
-  <div id="dataStatus"></div>
-  <div id="dropZone" class="drop">
-    <b>Drop the scenarios file here</b><br>or click to choose it<br>
-    <span class="hint">(a file ending in .json that was emailed to you)</span>
-    <input id="fileInput" type="file" accept=".json,application/json" style="display:none">
+  <p id="gateIntro">Thank you for helping verify these diabetes care scenarios. Loading the scenarios now&hellip;</p>
+
+  <!-- Loaded confirmation + clear next step (shown once scenarios are in) -->
+  <div id="loadedBox" class="loaded-box hidden">
+    <div class="loaded-line"><span class="check">&#10003;</span> <span id="loadedCount"></span></div>
+    <div class="next-step">Next: type your name below and press <b>Begin review</b>.</div>
   </div>
-  <label><b>Your name or initials</b></label>
-  <input id="nameInput" type="text" placeholder="e.g. J. Smith, RN">
-  <button id="beginBtn" class="btn btn-primary" onclick="startReview()" disabled>Begin review</button>
+
+  <!-- File picker: large by default, collapses to a small fallback after auto-load -->
+  <div id="pickerWrap">
+    <div id="dataStatus"></div>
+    <div id="dropZone" class="drop">
+      <b>Drop the scenarios file here</b><br>or click to choose it<br>
+      <span class="hint">(a file ending in .json that was emailed to you)</span>
+      <input id="fileInput" type="file" accept=".json,application/json" style="display:none">
+    </div>
+  </div>
+  <!-- tiny fallback link, only visible after a successful auto-load -->
+  <button id="changeFile" class="link-btn hidden" onclick="showPicker()">Need to load a different file?</button>
+
+  <div id="nameBlock">
+    <label><b>Your name or initials</b></label>
+    <input id="nameInput" type="text" placeholder="e.g. J. Smith, RN">
+    <button id="beginBtn" class="btn btn-primary" onclick="startReview()" disabled>Begin review</button>
+  </div>
 </div>
 
 <div id="app" class="hidden">
@@ -211,8 +239,31 @@ function ingest(obj, tagHint){
   if(!ids.length) throw new Error("No scenarios found in that file.");
   SCENARIOS=obj; IDS=ids;
   dataTag=(tagHint||"")+"_"+ids.length+"_"+ids[0]+"_"+ids[ids.length-1];
-  document.getElementById("dataStatus").innerHTML=`<div class="loaded">&#10003; Loaded ${ids.length} scenarios.</div>`;
+  onLoaded(ids.length);
   maybeEnableBegin();
+}
+// Successful load: show confirmation, collapse the file picker, point to the name field.
+function onLoaded(count){
+  document.getElementById("gateIntro").textContent =
+    "Thank you for helping verify these diabetes care scenarios.";
+  document.getElementById("loadedCount").textContent = count + " scenarios loaded";
+  document.getElementById("loadedBox").classList.remove("hidden");
+  document.getElementById("pickerWrap").classList.add("hidden");
+  document.getElementById("changeFile").classList.remove("hidden");
+  document.getElementById("gate").classList.add("ready");
+  document.getElementById("dataStatus").innerHTML="";
+  setTimeout(()=>{ const n=document.getElementById("nameInput"); if(n) n.focus(); }, 60);
+}
+// Edge case: reviewer needs to load a different/their own file.
+function showPicker(){
+  document.getElementById("pickerWrap").classList.remove("hidden");
+  document.getElementById("changeFile").classList.add("hidden");
+}
+function loadFailed(msg){
+  document.getElementById("gateIntro").textContent =
+    "Thank you for helping verify these diabetes care scenarios. Please load the scenario file you were sent, then enter your name.";
+  document.getElementById("pickerWrap").classList.remove("hidden");
+  document.getElementById("dataStatus").innerHTML=`<div class="err">${msg}</div>`;
 }
 function maybeEnableBegin(){
   const ready = SCENARIOS && document.getElementById("nameInput").value.trim();
@@ -222,8 +273,7 @@ function maybeEnableBegin(){
   const p = new URLSearchParams(location.search).get("data") || "scenarios.json";
   fetch(p).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
     .then(obj=>ingest(obj,"repo"))
-    .catch(e=>{document.getElementById("dataStatus").innerHTML=
-      `<div class="err">Could not load scenarios automatically (${e.message}). Use the file picker below.</div>`;});
+    .catch(e=>loadFailed("Couldn't load the scenarios automatically — please choose the file below."));
 })();
 const dz=document.getElementById("dropZone"), fi=document.getElementById("fileInput");
 dz.addEventListener("click",()=>fi.click());
