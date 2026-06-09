@@ -78,6 +78,8 @@
   .link-btn:hover{color:var(--accent);}
 
   .counter{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:14px;}
+  .counter.flash .scn-id{animation:scnflash 1s ease-out;}
+  @keyframes scnflash{0%{background:var(--key-bg);box-shadow:0 0 0 6px var(--key-bg);}100%{background:transparent;box-shadow:0 0 0 6px transparent;}}
   .scn-id{font-size:14px;color:var(--accent);font-weight:600;}
 
   .section{margin-bottom:18px;}
@@ -372,8 +374,16 @@ function setVerdict(v){const id=IDS[idx]; if(!reviews[id])reviews[id]={};
   persist(); render(); if(idx<IDS.length-1) setTimeout(()=>go(1),180);}
 function saveNote(){const id=IDS[idx]; if(!reviews[id])reviews[id]={verdict:null};
   reviews[id].note=document.getElementById("note").value.trim(); persist();}
-function go(d){idx=Math.max(0,Math.min(IDS.length-1,idx+d)); render();}
-function goTo(i){idx=i; render();}
+function go(d){idx=Math.max(0,Math.min(IDS.length-1,idx+d)); render(); onScenarioChange();}
+function goTo(i){idx=i; render(); onScenarioChange();}
+// Make it obvious the reviewer landed on a new scenario.
+function onScenarioChange(){
+  const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  window.scrollTo({top:0, behavior: reduce ? "auto" : "smooth"});
+  if(reduce) return;
+  const c=document.getElementById("counter");
+  c.classList.remove("flash"); void c.offsetWidth; c.classList.add("flash");
+}
 function persist(){localStorage.setItem(LS_KEY(), JSON.stringify(reviews));}
 function updateProgress(){const done=Object.values(reviews).filter(r=>r&&r.verdict).length;
   document.getElementById("progress").textContent=`Reviewed ${done} / ${IDS.length}`;}
