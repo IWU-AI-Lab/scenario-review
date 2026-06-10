@@ -143,6 +143,29 @@
   .export-bar{position:sticky;bottom:0;background:var(--paper);border-top:1px solid var(--line);
     padding:14px 20px;text-align:center;}
   .export-bar .btn{background:var(--ink);color:var(--paper);}
+  .btn:disabled{opacity:.4;cursor:default;}
+  /* summary screen */
+  .sum-intro{font-size:15px;color:var(--muted);margin:4px 0 18px;line-height:1.6;}
+  .sum-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;}
+  .sum-card{border:1px solid var(--line);border-left-width:5px;border-radius:10px;
+    padding:13px 15px;background:var(--card);cursor:pointer;transition:transform .06s;}
+  .sum-card:hover{transform:translateY(-2px);}
+  .sum-card.approve{border-left-color:var(--approve);}
+  .sum-card.reject{border-left-color:var(--reject);}
+  .sum-card .sc-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px;}
+  .sum-card .sc-id{font-weight:700;color:var(--accent);font-size:14px;}
+  .sc-badge{font-size:12px;font-weight:700;padding:3px 9px;border-radius:20px;color:#fff;white-space:nowrap;}
+  .sc-badge.approve{background:var(--approve);}
+  .sc-badge.reject{background:var(--reject);}
+  .sum-card .sc-rec{font-size:13px;margin:3px 0;}
+  .sum-card .sc-rec b{color:var(--accent);}
+  .sum-card .sc-esc{font-size:12px;color:var(--trap-ink);font-weight:600;margin-top:4px;}
+  .sum-card .sc-note{font-size:13px;color:var(--ink);background:var(--stated-bg);border-radius:6px;
+    padding:6px 9px;margin-top:7px;font-style:italic;}
+  .sum-card .sc-note .nl{font-style:normal;font-weight:700;color:var(--muted);font-size:11px;
+    text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:2px;}
+  .sum-actions{display:flex;justify-content:space-between;gap:12px;margin-top:24px;flex-wrap:wrap;}
+  .sum-actions .btn{background:var(--ink);color:var(--paper);}
   .hint{font-size:13px;color:var(--muted);margin-top:8px;}
   .hidden{display:none;}
   .jump{padding:8px;border:1px solid var(--line);border-radius:8px;font-family:inherit;
@@ -218,14 +241,31 @@
         <textarea id="note" oninput="saveNote()" placeholder="Optional for approvals, important for rejections..."></textarea>
         <div class="nav">
           <button class="btn btn-nav" id="prev" onclick="go(-1)">&larr; Previous</button>
-          <button class="btn btn-nav" id="next" onclick="go(1)">Next &rarr;</button>
+          <button class="btn btn-nav" id="next" onclick="next()">Next &rarr;</button>
         </div>
+        <div class="hint" id="navHint"></div>
       </div>
     </div>
   </div>
   <div class="export-bar">
-    <button class="btn" onclick="exportReview()">Export my review &amp; finish</button>
-    <div class="hint">Downloads a file to email back. You can re-export anytime.</div>
+    <button class="btn" id="exportBtn" onclick="exportReview()" disabled>Export my review &amp; finish</button>
+    <div class="hint" id="exportHint">Finish reviewing every scenario to enable export.</div>
+  </div>
+</div>
+
+<!-- Summary screen -->
+<div id="summary" class="hidden">
+  <header>
+    <h1>Review Summary</h1>
+    <div><span class="prog" id="sumProg"></span></div>
+  </header>
+  <div class="wrap">
+    <div class="sum-intro" id="sumIntro"></div>
+    <div class="sum-grid" id="sumGrid"></div>
+    <div class="sum-actions">
+      <button class="btn btn-nav" onclick="backToReview()">&larr; Back to scenarios</button>
+      <button class="btn" id="sumExportBtn" onclick="exportReview()" disabled>Export my review &amp; finish</button>
+    </div>
   </div>
 </div>
 
@@ -366,15 +406,32 @@ function render(){
   document.getElementById("note").value=r.note||"";
   document.getElementById("jump").value=idx;
   document.getElementById("prev").disabled=(idx===0);
-  document.getElementById("next").disabled=(idx===IDS.length-1);
+  const hasVerdict = !!r.verdict;
+  const nextBtn=document.getElementById("next");
+  nextBtn.disabled = !hasVerdict;                       // block Next until accepted/declined
+  nextBtn.innerHTML = (idx===IDS.length-1) ? "Finish &amp; see summary &rarr;" : "Next &rarr;";
+  document.getElementById("navHint").textContent =
+    hasVerdict ? "" : "Choose “Yes” or “No” above to continue.";
   updateProgress();
+  updateExportState();
 }
 function setVerdict(v){const id=IDS[idx]; if(!reviews[id])reviews[id]={};
   reviews[id].verdict=v; reviews[id].note=document.getElementById("note").value.trim();
   persist(); render(); if(idx<IDS.length-1) setTimeout(()=>go(1),180);}
 function saveNote(){const id=IDS[idx]; if(!reviews[id])reviews[id]={verdict:null};
   reviews[id].note=document.getElementById("note").value.trim(); persist();}
-function go(d){idx=Math.max(0,Math.min(IDS.length-1,idx+d)); render(); onScenarioChange();}
+// Next button: blocked unless current scenario has a verdict; on last item, go to summary.
+function next(){
+  const r=reviews[IDS[idx]];
+  if(!r||!r.verdict) return;                 // gate
+  if(idx===IDS.length-1){ showSummary(); return; }
+  go(1);
+}
+function go(d){
+  // guard: can't advance forward past an unreviewed scenario
+  if(d>0){ const r=reviews[IDS[idx]]; if(!r||!r.verdict) return; }
+  idx=Math.max(0,Math.min(IDS.length-1,idx+d)); render(); onScenarioChange();
+}
 function goTo(i){idx=i; render(); onScenarioChange();}
 // Make it obvious the reviewer landed on a new scenario.
 function onScenarioChange(){
@@ -385,9 +442,63 @@ function onScenarioChange(){
   c.classList.remove("flash"); void c.offsetWidth; c.classList.add("flash");
 }
 function persist(){localStorage.setItem(LS_KEY(), JSON.stringify(reviews));}
+function allDone(){ return IDS.length>0 && IDS.every(id=>reviews[id]&&reviews[id].verdict); }
 function updateProgress(){const done=Object.values(reviews).filter(r=>r&&r.verdict).length;
   document.getElementById("progress").textContent=`Reviewed ${done} / ${IDS.length}`;}
+// Enable export only when every scenario has a verdict.
+function updateExportState(){
+  const done=IDS.filter(id=>reviews[id]&&reviews[id].verdict).length;
+  const finished=allDone();
+  const eb=document.getElementById("exportBtn");
+  if(eb){ eb.disabled=!finished; }
+  const eh=document.getElementById("exportHint");
+  if(eh){ eh.textContent = finished
+    ? "All scenarios reviewed — ready to export."
+    : `Finish reviewing every scenario to enable export (${done} / ${IDS.length} done).`; }
+  const sb=document.getElementById("sumExportBtn");
+  if(sb){ sb.disabled=!finished; }
+}
+
+/* ---------- Summary screen ---------- */
+function showSummary(){
+  document.getElementById("app").classList.add("hidden");
+  const sum=document.getElementById("summary"); sum.classList.remove("hidden");
+  const approved=IDS.filter(id=>reviews[id]&&reviews[id].verdict==="approve").length;
+  const rejected=IDS.filter(id=>reviews[id]&&reviews[id].verdict==="reject").length;
+  document.getElementById("sumProg").textContent=`${approved+rejected} / ${IDS.length} reviewed`;
+  document.getElementById("sumIntro").innerHTML=
+    `<b>${approved}</b> marked appropriate · <b>${rejected}</b> marked not appropriate. `+
+    `Click any card to revisit that scenario. Export is enabled once every scenario has a verdict.`;
+  const grid=document.getElementById("sumGrid"); grid.innerHTML="";
+  IDS.forEach((id,i)=>{
+    const scn=SCENARIOS[id], g=scn.grading_key||{}, r=reviews[id]||{};
+    const v=r.verdict||"";
+    const rec=(g.best_choices||[]).map(esc).join(", ")||"—";
+    const escLine=g.requires_escalation?`<div class="sc-esc">&#9650; Escalation required</div>`:"";
+    const noteLine=r.note?`<div class="sc-note"><span class="nl">Reviewer note</span>${esc(r.note)}</div>`:"";
+    const badge=v==="approve"?`<span class="sc-badge approve">Appropriate</span>`
+              :v==="reject"?`<span class="sc-badge reject">Not appropriate</span>`
+              :`<span class="sc-badge" style="background:var(--muted)">Not reviewed</span>`;
+    const card=document.createElement("div");
+    card.className="sum-card"+(v?" "+v:"");
+    card.innerHTML=
+      `<div class="sc-top"><span class="sc-id">${id.replace("scenario_","Scenario ")}</span>${badge}</div>`+
+      `<div class="sc-rec"><b>Recommended:</b> ${rec}</div>`+
+      (g.trap?`<div class="sc-rec"><b>Should avoid:</b> ${esc(g.trap)}</div>`:"")+
+      escLine+noteLine;
+    card.onclick=()=>{ idx=i; backToReview(); };
+    grid.appendChild(card);
+  });
+  updateExportState();
+  window.scrollTo({top:0,behavior:"auto"});
+}
+function backToReview(){
+  document.getElementById("summary").classList.add("hidden");
+  document.getElementById("app").classList.remove("hidden");
+  render(); window.scrollTo({top:0,behavior:"auto"});
+}
 function exportReview(){
+  if(!allDone()){ alert("Please review every scenario before exporting."); return; }
   const done=Object.values(reviews).filter(r=>r&&r.verdict).length;
   const payload={reviewer:reviewer,dataset:dataTag,n_reviewed:done,n_total:IDS.length,reviews:reviews};
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
@@ -395,10 +506,8 @@ function exportReview(){
   const safe=reviewer.replace(/[^a-z0-9_-]/gi,"_");
   a.href=url; a.download="review_"+safe+".json";
   document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
-  let msg="Saved review_"+safe+".json to your Downloads folder.\n\nReviewed "+done+" of "+IDS.length+
-          " scenarios.\n\nPlease email that file back to the study coordinator.";
-  if(done<IDS.length) msg+="\n\n(Some scenarios are still unreviewed — that's okay, finish later and re-export.)";
-  alert(msg);
+  alert("Saved review_"+safe+".json to your Downloads folder.\n\nAll "+IDS.length+
+        " scenarios reviewed.\n\nPlease email that file back to the study coordinator.");
 }
 document.addEventListener("keydown",e=>{
   if(document.getElementById("app").classList.contains("hidden")) return;
